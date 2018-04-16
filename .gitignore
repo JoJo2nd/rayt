@@ -1,0 +1,5 @@
+build/
+nbuild/
+*.sublime-*
+compile_commands.json
+
