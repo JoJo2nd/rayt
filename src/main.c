@@ -9,6 +9,8 @@
 #define SCRN_WIDTH (960)
 #define SCRN_HEIGHT (720)
 
+#define MAKE_U32_COLOR(r, g, b, a) (uint32_t)(((r&0xFF)  << 24) | ((g&0xFF) << 16) | ((b&0xFF) << 8) | ((a&0xFF) << 0))
+
 int main(int argc, char** argv) {
   if (SDL_Init(SDL_INIT_VIDEO)!=0) {
     fprintf(stderr, "Error calling SDL_Init");        
@@ -25,11 +27,32 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    static int do_single_frame = 0;
+
+    if (do_single_frame)
+      continue;
+
+    do_single_frame = 1;
     SDL_RenderClear(renderer);
-    // void* dest_main_buffer;
-    // int dest_main_bfr_pitch;
-    // SDL_LockTexture(main_surface, NULL, (void**)&dest_main_buffer, &dest_main_bfr_pitch);
-    // SDL_UnlockTexture(main_surface);
+    void* dest_main_buffer;
+    int dest_main_bfr_pitch;
+    SDL_LockTexture(main_surface, NULL, (void**)&dest_main_buffer, &dest_main_bfr_pitch);
+
+    for (int32_t j=SCRN_HEIGHT-1; j >= 0; --j) {
+      for (int32_t i=0; i < SCRN_WIDTH; ++i) {
+        float r = (float)i / (float)SCRN_WIDTH;
+        float g = (float)j / (float)SCRN_HEIGHT;
+        float b = .2f;
+        int ir = round(255.99*r);
+        int ig = round(255.99*g);
+        int ib = round(255.99*b);
+
+        *(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch*j + i*4) = 
+        MAKE_U32_COLOR(ir, ig, ib, 255);
+      }
+    }
+
+    SDL_UnlockTexture(main_surface);
     
     SDL_RenderCopy(renderer, main_surface, NULL, NULL);
     SDL_RenderPresent(renderer);
