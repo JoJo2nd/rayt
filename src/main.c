@@ -82,8 +82,7 @@ int main(int argc, char** argv) {
         int ig = round(255.99*col.y);
         int ib = round(255.99*col.z);
 
-        *(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch*j + i*4) = 
-        MAKE_U32_COLOR(ir, ig, ib, 255);
+        *(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch*j + i*4) = MAKE_U32_COLOR(ir, ig, ib, 255);
       }
     }
 
