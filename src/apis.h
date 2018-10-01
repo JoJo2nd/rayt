@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vectormath/vectormath_aos.h"
+#include "vectormath/vectormath_aos_v.h"
 #include <stdint.h>
 #include <stdio.h>
 

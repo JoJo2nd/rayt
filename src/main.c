@@ -5,13 +5,21 @@
 #if USE_SDL
 #include "SDL.h"
 #endif
-#include "vectormath/vectormath_aos.h"
 #include "apis.h"
 
-#define SCRN_WIDTH (960)
+#define SCRN_WIDTH (1280)
 #define SCRN_HEIGHT (720)
 
-#define MAKE_U32_COLOR(r, g, b, a) (uint32_t)(((r&0xFF)  << 16) | ((g&0xFF) << 8) | ((b&0xFF) << 0) | ((a&0xFF) << 24))
+#define MAKE_U32_COLOR(r, g, b, a) (uint32_t)(((r&0xFF)  << 24) | ((g&0xFF) << 16) | ((b&0xFF) << 8) | ((a&0xFF) << 0))
+
+static struct {
+  vec3_t centre;
+  float radius;
+} sphere = {
+  .centre= { 0.f, 0.f, -1.f },
+  .radius = .5f,
+};
+
 
 struct ray_t {
   vec3_t pt, dir;
@@ -25,9 +33,22 @@ vec3_t ray_point_at(ray_t* ray, float t) {
   return r;
 }
 
+float hit_sphere(vec3_t* centre, float radius, ray_t const* r) {
+  vec3_t oc;
+  vmathV3Sub(&oc, &r->pt, centre);
+  float a = vmathV3Dot(&r->dir, &r->dir);
+  float b = 2.f * vmathV3Dot(&oc, &r->dir);
+  float c = vmathV3Dot(&oc, &oc) - radius*radius;
+  float discrimiant = b*b - 4.f*a*c;
+  return discrimiant;
+}
+
 vec3_t colour(const ray_t* ray) {
   static const vec3_t k1 = {1.f, 1.f, 1.f};
   static const vec3_t k2 = {.5f, .7f, 1.f};
+  if (hit_sphere(&sphere.centre, sphere.radius, ray) > 0.f) {
+    return vmathV3MakeFromElems_V(1.f, 0.f, 0.f);
+  }
   vec3_t unit_dir, a, b, ret;
   vmathV3Normalize(&unit_dir, &ray->dir);
   float t = .5f * (unit_dir.y + 1.f);
@@ -89,9 +110,9 @@ int main(int argc, char** argv) {
         vmathV3Add(&screen_ray.dir, &screen_ray.dir, &lower_left_corner);
         screen_ray.pt = origin;
         vec3_t col = colour(&screen_ray);
-        int ir = (int)round(255.99*col.x);
-        int ig = (int)round(255.99*col.y);
-        int ib = (int)round(255.99*col.z);
+        int ir = (int)round(255*col.x);
+        int ig = (int)round(255*col.y);
+        int ib = (int)round(255*col.z);
 
         *(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch*j + i*4) = MAKE_U32_COLOR(ir, ig, ib, 255);
       }
