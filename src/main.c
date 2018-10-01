@@ -27,8 +27,7 @@ vec3_t ray_point_at(ray_t* ray, float t) {
 
 vec3_t colour(const ray_t* ray) {
   static const vec3_t k1 = {1.f, 1.f, 1.f};
-  //static const vec3_t k2 = {.5f, .7f, 1.f};
-	static const vec3_t k2 = {.0f, .0f, 1.f};
+  static const vec3_t k2 = {.5f, .7f, 1.f};
   vec3_t unit_dir, a, b, ret;
   vmathV3Normalize(&unit_dir, &ray->dir);
   float t = .5f * (unit_dir.y + 1.f);
