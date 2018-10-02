@@ -7,10 +7,10 @@
 #endif
 #include "apis.h"
 
-#define SCRN_WIDTH (1280)
 #define SCRN_HEIGHT (720)
+#define SCRN_WIDTH (SCRN_HEIGHT*2)
 
-#define MAKE_U32_COLOR(r, g, b, a) (uint32_t)(((r&0xFF)  << 24) | ((g&0xFF) << 16) | ((b&0xFF) << 8) | ((a&0xFF) << 0))
+#define MAKE_U32_COLOR(r, g, b, a) (uint32_t)(((r&0xFF)  << 0) | ((g&0xFF) << 8) | ((b&0xFF) << 16) | ((a&0xFF) << 24))
 
 static struct {
   vec3_t centre;
@@ -26,7 +26,7 @@ struct ray_t {
 };
 typedef struct ray_t ray_t;
 
-vec3_t ray_point_at(ray_t* ray, float t) {
+vec3_t ray_point_at(ray_t const* ray, float t) {
   vec3_t r, vt;
   vmathV3ScalarMul(&vt, &ray->dir, t);
   vmathV3Add(&r, &ray->pt, &vt);
@@ -40,18 +40,24 @@ float hit_sphere(vec3_t* centre, float radius, ray_t const* r) {
   float b = 2.f * vmathV3Dot(&oc, &r->dir);
   float c = vmathV3Dot(&oc, &oc) - radius*radius;
   float discrimiant = b*b - 4.f*a*c;
-  return discrimiant;
+  if (discrimiant < 0) return -1.f;
+  return (-b - sqrtf(discrimiant)) / (2.f*a);
 }
 
-vec3_t colour(const ray_t* ray) {
+vec3_t colour(ray_t const* ray) {
   static const vec3_t k1 = {1.f, 1.f, 1.f};
   static const vec3_t k2 = {.5f, .7f, 1.f};
-  if (hit_sphere(&sphere.centre, sphere.radius, ray) > 0.f) {
-    return vmathV3MakeFromElems_V(1.f, 0.f, 0.f);
+  float t = hit_sphere(&sphere.centre, sphere.radius, ray);
+  if (t > 0.f) {
+	vec3_t n = vmathV3Normalize_V(vmathV3Sub_V(ray_point_at(ray, t), sphere.centre));
+	n.x = (n.x + 1) * .5f;
+	n.y = (n.y + 1) * .5f;
+	n.z = (n.z + 1) * .5f;
+	return n;
   }
   vec3_t unit_dir, a, b, ret;
   vmathV3Normalize(&unit_dir, &ray->dir);
-  float t = .5f * (unit_dir.y + 1.f);
+  t = .5f * (unit_dir.y + 1.f);
   vmathV3ScalarMul(&a, &k1, 1.0f-t);
   vmathV3ScalarMul(&b, &k2, t);
   vmathV3Add(&ret, &a, &b);
@@ -98,7 +104,7 @@ int main(int argc, char** argv) {
     vec3_t horizontal = {4.f, 0.f, 0.f};
     vec3_t vertical = {0.f, 2.f, 0.f};
     vec3_t origin = {0.f, 0.f, 0.f};
-    for (int32_t j=SCRN_HEIGHT-1; j >= 0; --j) {
+    for (int32_t j=0; j < SCRN_HEIGHT; ++j) {
       for (int32_t i=0; i < SCRN_WIDTH; ++i) {
         float u = (float)i / (float)SCRN_WIDTH;
         float v = (float)j / (float)SCRN_HEIGHT;
@@ -110,11 +116,15 @@ int main(int argc, char** argv) {
         vmathV3Add(&screen_ray.dir, &screen_ray.dir, &lower_left_corner);
         screen_ray.pt = origin;
         vec3_t col = colour(&screen_ray);
-        int ir = (int)round(255*col.x);
-        int ig = (int)round(255*col.y);
-        int ib = (int)round(255*col.z);
+        int ir = (int)floorf(255*col.x);
+        int ig = (int)floorf(255*col.y);
+        int ib = (int)floorf(255*col.z);
 
-        *(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch*j + i*4) = MAKE_U32_COLOR(ir, ig, ib, 255);
+		*(uint32_t*)(((uint8_t*)dest_main_buffer) + (dest_main_bfr_pitch * j) + (i * 4)) = MAKE_U32_COLOR(ir, ig, ib, 255);
+		//
+		//*(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch * j + i * 4) = MAKE_U32_COLOR(255,   0,   0, 255);
+		//*(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch * j + i * 4) = MAKE_U32_COLOR(  0, 255,   0, 255);
+		//*(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch * j + i * 4) = MAKE_U32_COLOR(  0,   0, 255, 255);
       }
     }
 #if USE_SDL
