@@ -12,19 +12,26 @@
 
 #define MAKE_U32_COLOR(r, g, b, a) (uint32_t)(((r&0xFF)  << 0) | ((g&0xFF) << 8) | ((b&0xFF) << 16) | ((a&0xFF) << 24))
 
-static struct {
+typedef struct sphere_t {
   vec3_t centre;
   float radius;
-} sphere = {
-  .centre= { 0.f, 0.f, -1.f },
-  .radius = .5f,
-};
+} sphere_t;
 
 
-struct ray_t {
+typedef struct hit_rec_t {
+	float t;
+	vec3_t p, normal;
+} hit_rec_t;
+
+typedef struct ray_t {
   vec3_t pt, dir;
+} ray_t;
+
+enum { sphere_count = 2 };
+static sphere_t sphere[sphere_count] = {
+	{.centre = { 0.f, 0.f, -1.f },.radius = .5f, },
+	{.centre = { 0.f, -100.5f, -1.f },.radius = 100.f, },
 };
-typedef struct ray_t ray_t;
 
 vec3_t ray_point_at(ray_t const* ray, float t) {
   vec3_t r, vt;
@@ -33,31 +40,45 @@ vec3_t ray_point_at(ray_t const* ray, float t) {
   return r;
 }
 
-float hit_sphere(vec3_t* centre, float radius, ray_t const* r) {
-  vec3_t oc;
-  vmathV3Sub(&oc, &r->pt, centre);
-  float a = vmathV3Dot(&r->dir, &r->dir);
-  float b = 2.f * vmathV3Dot(&oc, &r->dir);
-  float c = vmathV3Dot(&oc, &oc) - radius*radius;
-  float discrimiant = b*b - 4.f*a*c;
-  if (discrimiant < 0) return -1.f;
-  return (-b - sqrtf(discrimiant)) / (2.f*a);
+int hit_spheres(hit_rec_t* hit, sphere_t const* s, uint32_t s_count, float t_min, float t_max, ray_t const* r) {
+	hit->t = t_max;
+	for (uint32_t i = 0; i < s_count; ++i) {
+		vec3_t oc;
+		vmathV3Sub(&oc, &r->pt, &s[i].centre);
+		float a = vmathV3Dot(&r->dir, &r->dir);
+		float b = vmathV3Dot(&oc, &r->dir);
+		float c = vmathV3Dot(&oc, &oc) - s[i].radius*s[i].radius;
+		float discrimiant = b * b - a * c;
+		if (discrimiant > 0) {
+			float tmp = (-b - sqrtf(discrimiant)) / a;
+			if (tmp < hit->t && tmp < t_max && tmp > t_min) {
+				hit->t = tmp;
+				hit->p = ray_point_at(r, tmp);
+				hit->normal = vmathV3ScalarMul_V(vmathV3Sub_V(hit->p, s[i].centre), 1.f / s[i].radius);
+			}
+			tmp = (-b + sqrtf(discrimiant)) / a;
+			if (tmp < hit->t && tmp < t_max && tmp > t_min) {
+				hit->t = tmp;
+				hit->p = ray_point_at(r, tmp);
+				hit->normal = vmathV3ScalarMul_V(vmathV3Sub_V(hit->p, s[i].centre), 1.f / s[i].radius);
+			}
+		}
+	}
+	return hit->t < t_max;
 }
 
 vec3_t colour(ray_t const* ray) {
   static const vec3_t k1 = {1.f, 1.f, 1.f};
   static const vec3_t k2 = {.5f, .7f, 1.f};
-  float t = hit_sphere(&sphere.centre, sphere.radius, ray);
-  if (t > 0.f) {
-	vec3_t n = vmathV3Normalize_V(vmathV3Sub_V(ray_point_at(ray, t), sphere.centre));
-	n.x = (n.x + 1) * .5f;
-	n.y = (n.y + 1) * .5f;
-	n.z = (n.z + 1) * .5f;
-	return n;
+  hit_rec_t hit;
+  if (hit_spheres(&hit, sphere, sphere_count, 0.f, FLT_MAX, ray)) {
+	vec3_t n = vmathV3Add_V(hit.normal, vmathV3MakeFromScalar_V(1));
+	return vmathV3ScalarMul_V(n, .5f);
   }
+  
   vec3_t unit_dir, a, b, ret;
   vmathV3Normalize(&unit_dir, &ray->dir);
-  t = .5f * (unit_dir.y + 1.f);
+  float t = .5f * (unit_dir.y + 1.f);
   vmathV3ScalarMul(&a, &k1, 1.0f-t);
   vmathV3ScalarMul(&b, &k2, t);
   vmathV3Add(&ret, &a, &b);
@@ -120,11 +141,7 @@ int main(int argc, char** argv) {
         int ig = (int)floorf(255*col.y);
         int ib = (int)floorf(255*col.z);
 
-		*(uint32_t*)(((uint8_t*)dest_main_buffer) + (dest_main_bfr_pitch * j) + (i * 4)) = MAKE_U32_COLOR(ir, ig, ib, 255);
-		//
-		//*(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch * j + i * 4) = MAKE_U32_COLOR(255,   0,   0, 255);
-		//*(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch * j + i * 4) = MAKE_U32_COLOR(  0, 255,   0, 255);
-		//*(uint32_t*)(((uint8_t*)dest_main_buffer) + dest_main_bfr_pitch * j + i * 4) = MAKE_U32_COLOR(  0,   0, 255, 255);
+				*(uint32_t*)(((uint8_t*)dest_main_buffer) + (dest_main_bfr_pitch * (SCRN_HEIGHT-(j+1))) + (i * 4)) = MAKE_U32_COLOR(ir, ig, ib, 255);
       }
     }
 #if USE_SDL
