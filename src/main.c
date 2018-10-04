@@ -17,7 +17,6 @@ typedef struct sphere_t {
   float radius;
 } sphere_t;
 
-
 typedef struct hit_rec_t {
 	float t;
 	vec3_t p, normal;
@@ -26,6 +25,29 @@ typedef struct hit_rec_t {
 typedef struct ray_t {
   vec3_t pt, dir;
 } ray_t;
+
+typedef struct camera_t {
+  vec3_t lower_left_corner;
+  vec3_t horizontal;
+  vec3_t vertical;
+  vec3_t origin;
+} camera_t;
+
+void cam_default(camera_t* cam) {
+  vmathV3MakeFromElems(&cam->lower_left_corner, -2.f, -1.f, -1.f);
+  vmathV3MakeFromElems(&cam->horizontal, 4.f, 0.f, 0.f);
+  vmathV3MakeFromElems(&cam->vertical, 0.f, 2.f, 0.f);
+  vmathV3MakeFromElems(&cam->origin, 0.f, 0.f, 0.f);
+}
+
+void cam_ray(ray_t* screen_ray, camera_t const* cam, float u, float v) {
+  vec3_t vv;
+  vmathV3ScalarMul(&screen_ray->dir, &cam->horizontal, u);
+  vmathV3ScalarMul(&vv, &cam->vertical, v);
+  vmathV3Add(&screen_ray->dir, &screen_ray->dir, &vv);
+  vmathV3Add(&screen_ray->dir, &screen_ray->dir, &cam->lower_left_corner);
+  screen_ray->pt = cam->origin;
+}
 
 enum { sphere_count = 2 };
 static sphere_t sphere[sphere_count] = {
@@ -120,23 +142,21 @@ int main(int argc, char** argv) {
 		void* dest_main_buffer = malloc(SCRN_WIDTH*SCRN_HEIGHT*4);
 		int dest_main_bfr_pitch = SCRN_WIDTH*4;
 #endif
-
-    vec3_t lower_left_corner = {-2.f, -1.f, -1.f};
-    vec3_t horizontal = {4.f, 0.f, 0.f};
-    vec3_t vertical = {0.f, 2.f, 0.f};
-    vec3_t origin = {0.f, 0.f, 0.f};
+    uint32_t samples = 100;
+    camera_t cam;
+    cam_default(&cam);
     for (int32_t j=0; j < SCRN_HEIGHT; ++j) {
       for (int32_t i=0; i < SCRN_WIDTH; ++i) {
-        float u = (float)i / (float)SCRN_WIDTH;
-        float v = (float)j / (float)SCRN_HEIGHT;
-        vec3_t vv;
-        ray_t screen_ray;
-        vmathV3ScalarMul(&screen_ray.dir, &horizontal, u);
-        vmathV3ScalarMul(&vv, &vertical, v);
-        vmathV3Add(&screen_ray.dir, &screen_ray.dir, &vv);
-        vmathV3Add(&screen_ray.dir, &screen_ray.dir, &lower_left_corner);
-        screen_ray.pt = origin;
-        vec3_t col = colour(&screen_ray);
+        vec3_t col = {0.f, 0.f, 0.f};
+        for (uint32_t s=0; s < samples; ++s) {
+          ray_t screen_ray;
+          float u = ((float)i + (float)drand48()) / (float)SCRN_WIDTH;
+          float v = ((float)j + (float)drand48()) / (float)SCRN_HEIGHT;
+          cam_ray(&screen_ray, &cam, u, v);
+          col = vmathV3Add_V(col, colour(&screen_ray));
+
+        }
+        col = vmathV3ScalarDiv_V(col, (float)samples);
         int ir = (int)floorf(255*col.x);
         int ig = (int)floorf(255*col.y);
         int ib = (int)floorf(255*col.z);

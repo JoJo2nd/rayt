@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef WIN32
+  #define drand48() ((double)rand() / RAND_MAX)
+#endif
+
 #include "vectormath/vectormath_aos.h"
 #include "vectormath/vectormath_aos_v.h"
 #include <stdint.h>
