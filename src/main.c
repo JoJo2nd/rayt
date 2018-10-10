@@ -62,6 +62,14 @@ vec3_t ray_point_at(ray_t const* ray, float t) {
   return r;
 }
 
+vec3_t rand_vec3() {
+	vec3_t p;
+	do {
+		p = vmathV3Sub_V( vmathV3MakeFromElems_V(2.f*frand48(), 2.f*frand48(), 2.f*frand48()), vmathV3MakeFromScalar_V(1));
+	} while (vmathV3Dot(&p, &p) >= 1.f);
+	return p;
+}
+
 int hit_spheres(hit_rec_t* hit, sphere_t const* s, uint32_t s_count, float t_min, float t_max, ray_t const* r) {
 	hit->t = t_max;
 	for (uint32_t i = 0; i < s_count; ++i) {
@@ -94,8 +102,9 @@ vec3_t colour(ray_t const* ray) {
   static const vec3_t k2 = {.5f, .7f, 1.f};
   hit_rec_t hit;
   if (hit_spheres(&hit, sphere, sphere_count, 0.f, FLT_MAX, ray)) {
-	vec3_t n = vmathV3Add_V(hit.normal, vmathV3MakeFromScalar_V(1));
-	return vmathV3ScalarMul_V(n, .5f);
+		vec3_t target = vmathV3Add_V(vmathV3Add_V(hit.p, hit.normal), rand_vec3());
+		ray_t bounce = { .pt = hit.p,.dir = vmathV3Sub_V(target, hit.p) };
+		return vmathV3ScalarMul_V(colour(&bounce), .5f);
   }
   
   vec3_t unit_dir, a, b, ret;

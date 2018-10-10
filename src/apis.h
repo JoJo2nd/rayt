@@ -2,6 +2,7 @@
 
 #ifdef WIN32
   #define drand48() ((double)rand() / RAND_MAX)
+	#define frand48() ((float)drand48())
 #endif
 
 #include "vectormath/vectormath_aos.h"
