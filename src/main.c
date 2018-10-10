@@ -166,6 +166,10 @@ int main(int argc, char** argv) {
 
         }
         col = vmathV3ScalarDiv_V(col, (float)samples);
+				// Gamma correct the image.
+				col.x = powf(col.x, 1.f / 2.2f);
+				col.y = powf(col.y, 1.f / 2.2f);
+				col.z = powf(col.z, 1.f / 2.2f);
         int ir = (int)floorf(255*col.x);
         int ig = (int)floorf(255*col.y);
         int ib = (int)floorf(255*col.z);
