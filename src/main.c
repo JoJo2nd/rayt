@@ -12,9 +12,27 @@
 
 #define MAKE_U32_COLOR(r, g, b, a) (uint32_t)(((r&0xFF)  << 0) | ((g&0xFF) << 8) | ((b&0xFF) << 16) | ((a&0xFF) << 24))
 
+typedef
+enum materialtype_t {
+  MatLambertian,
+  MatMetal,
+
+  MatMax,
+} materialtype_t;
+
+typedef struct matlambertian_t {
+  vec3_t albedo;
+} matlambertian_t;
+
+typedef struct matmetal_t {
+  vec3_t albedo;
+} matmetal_t;
+
 typedef struct sphere_t {
   vec3_t centre;
   float radius;
+  materialtype_t mat;
+  uint16_t matidx;
 } sphere_t;
 
 typedef struct hit_rec_t {
@@ -49,12 +67,6 @@ void cam_ray(ray_t* screen_ray, camera_t const* cam, float u, float v) {
   screen_ray->pt = cam->origin;
 }
 
-enum { sphere_count = 2 };
-static sphere_t sphere[sphere_count] = {
-	{.centre = { 0.f, 0.f, -1.f },.radius = .5f, },
-	{.centre = { 0.f, -100.5f, -1.f },.radius = 100.f, },
-};
-
 vec3_t ray_point_at(ray_t const* ray, float t) {
   vec3_t r, vt;
   vmathV3ScalarMul(&vt, &ray->dir, t);
@@ -68,6 +80,28 @@ vec3_t rand_vec3() {
 		p = vmathV3Sub_V( vmathV3MakeFromElems_V(2.f*frand48(), 2.f*frand48(), 2.f*frand48()), vmathV3MakeFromScalar_V(1));
 	} while (vmathV3Dot(&p, &p) >= 1.f);
 	return p;
+}
+
+vec3_t vec_reflect(vec3_t const* v, vec3_t const* n) {
+  vec3_t r = vmathV3ScalarMul_V(*n, 2.f*vmathV3Dot(v, n));
+  return vmathV3Sub_V(*v, r);
+}
+
+int lambertian_scatter(matlambertian_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
+  vec3_t target = vmathV3Add_V(vmathV3Add_V(hit->p, hit->normal), rand_vec3());
+  scatter->pt = hit->p;
+  scatter->dir = vmathV3Sub_V(target, hit->p);
+  *atten = params->albedo;
+  return 1;
+}
+
+int metal_scatter(matmetal_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
+  vec3_t n = vmathV3Normalize_V(rin->dir);
+  vec3_t reflected = vec_reflect(&n, &hit->normal);
+  scatter->pt = hit->p;
+  scatter->dir = reflected;
+  *atten = params->albedo;
+  return vmathV3Dot_V(scatter->dir, hit->normal) > 0.f ? 1 : 0;
 }
 
 int hit_spheres(hit_rec_t* hit, sphere_t const* s, uint32_t s_count, float t_min, float t_max, ray_t const* r) {
@@ -97,11 +131,17 @@ int hit_spheres(hit_rec_t* hit, sphere_t const* s, uint32_t s_count, float t_min
 	return hit->t < t_max;
 }
 
+enum { sphere_count = 2 };
+static sphere_t sphere[sphere_count] = {
+	{.centre = { 0.f, 0.f, -1.f },.radius = .5f, },
+	{.centre = { 0.f, -100.5f, -1.f },.radius = 100.f, },
+};
+
 vec3_t colour(ray_t const* ray) {
   static const vec3_t k1 = {1.f, 1.f, 1.f};
   static const vec3_t k2 = {.5f, .7f, 1.f};
   hit_rec_t hit;
-  if (hit_spheres(&hit, sphere, sphere_count, 0.f, FLT_MAX, ray)) {
+  if (hit_spheres(&hit, sphere, sphere_count, 0.001f, FLT_MAX, ray)) {
 		vec3_t target = vmathV3Add_V(vmathV3Add_V(hit.p, hit.normal), rand_vec3());
 		ray_t bounce = { .pt = hit.p,.dir = vmathV3Sub_V(target, hit.p) };
 		return vmathV3ScalarMul_V(colour(&bounce), .5f);
