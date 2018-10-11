@@ -26,6 +26,7 @@ typedef struct matlambertian_t {
 
 typedef struct matmetal_t {
   vec3_t albedo;
+  float roughness;
 } matmetal_t;
 
 typedef struct sphere_t {
@@ -99,7 +100,7 @@ int lambertian_scatter(matlambertian_t const* params, ray_t const* rin, hit_rec_
 
 int metal_scatter(matmetal_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
   vec3_t n = vmathV3Normalize_V(rin->dir);
-  vec3_t reflected = vec_reflect(&n, &hit->normal);
+  vec3_t reflected = vmathV3Add_V(vec_reflect(&n, &hit->normal), vmathV3ScalarMul_V(rand_vec3(), params->roughness));
   scatter->pt = hit->p;
   scatter->dir = reflected;
   *atten = params->albedo;
@@ -140,22 +141,23 @@ int hit_spheres(hit_rec_t* hit, sphere_t const* s, uint32_t s_count, float t_min
 enum { 
   sphere_count = 4,
   lambertian_count = 2,
-  metal_count = 2,
+  metal_count = 3,
   call_depth_limit = 50,
 };
 static sphere_t sphere[sphere_count] = {
 	{.centre = { 0.f, 0.f, -1.f },.radius = .5f, .mat=MatLambertian, .matidx=0},
-	{.centre = { 0.f, -100.5f, -1.f },.radius = 100.f,.mat = MatLambertian,.matidx = 1},
+	{.centre = { 0.f, -100.5f, -1.f },.radius = 100.f, .mat=MatLambertian,.matidx = 1},
   {.centre = { 1.f, 0.f, -1.f },.radius = .5f, .mat=MatMetal, .matidx=0},
-  {.centre = { -1.f, 0.f, -1.f },.radius = .5f, .mat=MatMetal, .matidx=1},
+  {.centre = { -1.f, 0.f, -1.f },.radius = .5f, .mat=MatMetal, .matidx=2},
 };
 matlambertian_t mat_lamb[lambertian_count] = {
   {.albedo={.8f, .3f, .3f}},
   {.albedo={.8f, .8f, .0f}},
 };
 matmetal_t mat_metal[metal_count] = {
-  {.albedo={.8f, .6f, .2f}},
-  {.albedo={.8f, .8f, .8f}},
+  {.albedo={.8f, .6f, .2f}, .roughness=.0f, },
+  {.albedo={.8f, .6f, .2f}, .roughness=.4f, },
+  {.albedo={.8f, .8f, .8f},.roughness =1.f },
 };
 
 vec3_t colour(ray_t const* ray, int call_depth) {
