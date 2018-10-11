@@ -38,6 +38,8 @@ typedef struct sphere_t {
 typedef struct hit_rec_t {
 	float t;
 	vec3_t p, normal;
+  materialtype_t mat;
+  uint16_t midx;
 } hit_rec_t;
 
 typedef struct ray_t {
@@ -119,32 +121,63 @@ int hit_spheres(hit_rec_t* hit, sphere_t const* s, uint32_t s_count, float t_min
 				hit->t = tmp;
 				hit->p = ray_point_at(r, tmp);
 				hit->normal = vmathV3ScalarMul_V(vmathV3Sub_V(hit->p, s[i].centre), 1.f / s[i].radius);
+        hit->mat = s[i].mat;
+        hit->midx = s[i].matidx;
 			}
 			tmp = (-b + sqrtf(discrimiant)) / a;
 			if (tmp < hit->t && tmp < t_max && tmp > t_min) {
 				hit->t = tmp;
 				hit->p = ray_point_at(r, tmp);
 				hit->normal = vmathV3ScalarMul_V(vmathV3Sub_V(hit->p, s[i].centre), 1.f / s[i].radius);
+        hit->mat = s[i].mat;
+        hit->midx = s[i].matidx;
 			}
 		}
 	}
 	return hit->t < t_max;
 }
 
-enum { sphere_count = 2 };
+enum { 
+  sphere_count = 4,
+  lambertian_count = 2,
+  metal_count = 2,
+  call_depth_limit = 50,
+};
 static sphere_t sphere[sphere_count] = {
-	{.centre = { 0.f, 0.f, -1.f },.radius = .5f, },
-	{.centre = { 0.f, -100.5f, -1.f },.radius = 100.f, },
+	{.centre = { 0.f, 0.f, -1.f },.radius = .5f, .mat=MatLambertian, .matidx=0},
+	{.centre = { 0.f, -100.5f, -1.f },.radius = 100.f,.mat = MatLambertian,.matidx = 1},
+  {.centre = { 1.f, 0.f, -1.f },.radius = .5f, .mat=MatMetal, .matidx=0},
+  {.centre = { -1.f, 0.f, -1.f },.radius = .5f, .mat=MatMetal, .matidx=1},
+};
+matlambertian_t mat_lamb[lambertian_count] = {
+  {.albedo={.8f, .3f, .3f}},
+  {.albedo={.8f, .8f, .0f}},
+};
+matmetal_t mat_metal[metal_count] = {
+  {.albedo={.8f, .6f, .2f}},
+  {.albedo={.8f, .8f, .8f}},
 };
 
-vec3_t colour(ray_t const* ray) {
+vec3_t colour(ray_t const* ray, int call_depth) {
   static const vec3_t k1 = {1.f, 1.f, 1.f};
   static const vec3_t k2 = {.5f, .7f, 1.f};
   hit_rec_t hit;
   if (hit_spheres(&hit, sphere, sphere_count, 0.001f, FLT_MAX, ray)) {
-		vec3_t target = vmathV3Add_V(vmathV3Add_V(hit.p, hit.normal), rand_vec3());
-		ray_t bounce = { .pt = hit.p,.dir = vmathV3Sub_V(target, hit.p) };
-		return vmathV3ScalarMul_V(colour(&bounce), .5f);
+    if (call_depth >= call_depth_limit) return vmathV3MakeFromScalar_V(0.f);
+    ray_t scattered;
+    vec3_t atten;
+    int ret = 0;
+    switch(hit.mat) {
+    case MatLambertian:
+      ret = lambertian_scatter(mat_lamb + hit.midx, ray, &hit, &atten, &scattered);
+      break;
+    case MatMetal:
+      ret = metal_scatter(mat_metal + hit.midx, ray, &hit, &atten, &scattered);
+      break;
+    }
+		
+    if (!ret) return vmathV3MakeFromScalar_V(0.f);
+    return vmathV3MulPerElem_V(atten, colour(&scattered, call_depth + 1));
   }
   
   vec3_t unit_dir, a, b, ret;
@@ -202,7 +235,7 @@ int main(int argc, char** argv) {
           float u = ((float)i + (float)drand48()) / (float)SCRN_WIDTH;
           float v = ((float)j + (float)drand48()) / (float)SCRN_HEIGHT;
           cam_ray(&screen_ray, &cam, u, v);
-          col = vmathV3Add_V(col, colour(&screen_ray));
+          col = vmathV3Add_V(col, colour(&screen_ray, 0));
 
         }
         col = vmathV3ScalarDiv_V(col, (float)samples);
