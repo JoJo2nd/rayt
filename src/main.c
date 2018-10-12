@@ -16,6 +16,7 @@ typedef
 enum materialtype_t {
   MatLambertian,
   MatMetal,
+	MatDielectric,
 
   MatMax,
 } materialtype_t;
@@ -28,6 +29,11 @@ typedef struct matmetal_t {
   vec3_t albedo;
   float roughness;
 } matmetal_t;
+
+typedef struct matdielectric_t {
+	vec3_t albedo;
+	float refraction;
+} matdielectric_t;
 
 typedef struct sphere_t {
   vec3_t centre;
@@ -90,6 +96,21 @@ vec3_t vec_reflect(vec3_t const* v, vec3_t const* n) {
   return vmathV3Sub_V(*v, r);
 }
 
+float vec_refract(vec3_t const* v, vec3_t const* n, float idx_refraction, vec3_t* r) {
+	vec3_t nv = vmathV3Normalize_V(*v);
+	float dt = vmathV3Dot(&nv, n);
+	float discriminant = 1.f - idx_refraction*idx_refraction*(1-dt*dt);
+	if (discriminant > 0.f) {
+		vec3_t vt1, vt2, ndt;
+		vmathV3ScalarMul(&ndt, n, dt);
+		vmathV3Sub(&vt1, v, &ndt);
+		vmathV3ScalarMul(&ndt, &vt1, idx_refraction);
+		vmathV3ScalarMul(&vt2, n, sqrtf(discriminant));
+		vmathV3Sub(r, &ndt, &vt2);
+	}
+	return discriminant;
+}
+
 int lambertian_scatter(matlambertian_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
   vec3_t target = vmathV3Add_V(vmathV3Add_V(hit->p, hit->normal), rand_vec3());
   scatter->pt = hit->p;
@@ -105,6 +126,11 @@ int metal_scatter(matmetal_t const* params, ray_t const* rin, hit_rec_t const* h
   scatter->dir = reflected;
   *atten = params->albedo;
   return vmathV3Dot_V(scatter->dir, hit->normal) > 0.f ? 1 : 0;
+}
+
+int dielectric_scatter(matdielectric_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
+	// TODO:
+	return 1;
 }
 
 int hit_spheres(hit_rec_t* hit, sphere_t const* s, uint32_t s_count, float t_min, float t_max, ray_t const* r) {
