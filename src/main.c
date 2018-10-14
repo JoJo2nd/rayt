@@ -31,7 +31,6 @@ typedef struct matmetal_t {
 } matmetal_t;
 
 typedef struct matdielectric_t {
-	vec3_t albedo;
 	float refraction;
 } matdielectric_t;
 
@@ -76,6 +75,12 @@ void cam_ray(ray_t* screen_ray, camera_t const* cam, float u, float v) {
   screen_ray->pt = cam->origin;
 }
 
+float schlick(float cosine, float ref_idx) {
+  float r0 = (1.f-ref_idx)/(1.f+ref_idx);
+  r0 = r0 * r0;
+  return r0 + (1.f-r0)*powf(1.f-cosine, 5);
+}
+
 vec3_t ray_point_at(ray_t const* ray, float t) {
   vec3_t r, vt;
   vmathV3ScalarMul(&vt, &ray->dir, t);
@@ -98,15 +103,15 @@ vec3_t vec_reflect(vec3_t const* v, vec3_t const* n) {
 
 float vec_refract(vec3_t const* v, vec3_t const* n, float idx_refraction, vec3_t* r) {
 	vec3_t nv = vmathV3Normalize_V(*v);
-	float dt = vmathV3Dot(&nv, n);
+  vec3_t nn = vmathV3Normalize_V(*n);
+	float dt = vmathV3Dot(&nv, &nn);
 	float discriminant = 1.f - idx_refraction*idx_refraction*(1-dt*dt);
 	if (discriminant > 0.f) {
-		vec3_t vt1, vt2, ndt;
-		vmathV3ScalarMul(&ndt, n, dt);
-		vmathV3Sub(&vt1, v, &ndt);
-		vmathV3ScalarMul(&ndt, &vt1, idx_refraction);
-		vmathV3ScalarMul(&vt2, n, sqrtf(discriminant));
-		vmathV3Sub(r, &ndt, &vt2);
+		vec3_t v1, v2;
+    vmathV3ScalarMul(&v1, &nv, idx_refraction);
+    float v2f = idx_refraction * dt + sqrtf(discriminant);
+    vmathV3ScalarMul(&v2, &nn, v2f);
+    vmathV3Sub(r, &v1, &v2);
 	}
 	return discriminant;
 }
@@ -128,8 +133,64 @@ int metal_scatter(matmetal_t const* params, ray_t const* rin, hit_rec_t const* h
   return vmathV3Dot_V(scatter->dir, hit->normal) > 0.f ? 1 : 0;
 }
 
-int dielectric_scatter(matdielectric_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
-	// TODO:
+int dielectric_scatter_v1(matdielectric_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
+  vec3_t outward_nrm;
+  vec3_t reflected = vec_reflect(&rin->dir, &hit->normal);
+  vec3_t refracted;
+  float ni_over_ni;
+  vmathV3MakeFromScalar(atten, 1.f);
+  //float reflect_prob;
+  //float cosine;
+  if (vmathV3Dot(&rin->dir, &hit->normal) > 0) {
+    vmathV3Neg(&outward_nrm, &hit->normal);
+    ni_over_ni = params->refraction;
+    //cosine = params->refraction * vmathV3Dot(&rin->dir, &hit->normal) / vmathV3Length(&rin->dir);
+  } else {
+    outward_nrm = hit->normal;
+    ni_over_ni = 1.f / params->refraction;
+    //cosine = -vmathV3Dot(&rin->dir, &hit->normal) / vmathV3Length(&rin->dir);
+  }
+  if (vec_refract(&rin->dir, &outward_nrm, ni_over_ni, &refracted) > 0) {
+    scatter->pt = hit->p;
+    scatter->dir = refracted;
+  } else {
+    scatter->pt = hit->p;
+    scatter->dir = reflected;
+  }
+
+  return 1;
+}
+
+int dielectric_scatter_v2(matdielectric_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
+	vec3_t outward_nrm;
+  vec3_t reflected = vec_reflect(&rin->dir, &hit->normal);
+  vec3_t refracted;
+  float ni_over_ni;
+  float reflect_prob;
+  float cosine;
+  vmathV3MakeFromScalar(atten, 1.f);
+  if (vmathV3Dot(&rin->dir, &hit->normal) > 0) {
+    vmathV3Neg(&outward_nrm, &hit->normal);
+    ni_over_ni = params->refraction;
+    cosine = params->refraction * vmathV3Dot(&rin->dir, &hit->normal) / vmathV3Length(&rin->dir);
+  } else {
+    outward_nrm = hit->normal;
+    ni_over_ni = 1.f / params->refraction;
+    cosine = -vmathV3Dot(&rin->dir, &hit->normal) / vmathV3Length(&rin->dir);
+  }
+  if (vec_refract(&rin->dir, &outward_nrm, ni_over_ni, &refracted) > 0) {
+    reflect_prob = schlick(cosine, params->refraction);
+  } else {
+    reflect_prob = 1.f;
+  }
+
+  if (drand48() < reflect_prob) {
+    scatter->pt = hit->p;
+    scatter->dir = reflected;
+  } else {
+    scatter->pt = hit->p;
+    scatter->dir = refracted;
+  }
 	return 1;
 }
 
@@ -165,16 +226,18 @@ int hit_spheres(hit_rec_t* hit, sphere_t const* s, uint32_t s_count, float t_min
 }
 
 enum { 
-  sphere_count = 4,
+  sphere_count = 5,
   lambertian_count = 2,
   metal_count = 3,
+  dielectric_count = 1,
   call_depth_limit = 50,
 };
 static sphere_t sphere[sphere_count] = {
 	{.centre = { 0.f, 0.f, -1.f },.radius = .5f, .mat=MatLambertian, .matidx=0},
 	{.centre = { 0.f, -100.5f, -1.f },.radius = 100.f, .mat=MatLambertian,.matidx = 1},
   {.centre = { 1.f, 0.f, -1.f },.radius = .5f, .mat=MatMetal, .matidx=0},
-  {.centre = { -1.f, 0.f, -1.f },.radius = .5f, .mat=MatMetal, .matidx=2},
+  {.centre = { -1.f, 0.f, -1.f },.radius = .5f, .mat=MatDielectric, .matidx=0},
+{ .centre = { -1.f, 0.f, -1.f },.radius = -.45f,.mat = MatDielectric,.matidx = 0 },
 };
 matlambertian_t mat_lamb[lambertian_count] = {
   {.albedo={.8f, .3f, .3f}},
@@ -184,6 +247,9 @@ matmetal_t mat_metal[metal_count] = {
   {.albedo={.8f, .6f, .2f}, .roughness=.0f, },
   {.albedo={.8f, .6f, .2f}, .roughness=.4f, },
   {.albedo={.8f, .8f, .8f},.roughness =1.f },
+};
+matdielectric_t mat_dielectric[dielectric_count] = {
+  {.refraction=1.6f}
 };
 
 vec3_t colour(ray_t const* ray, int call_depth) {
@@ -201,6 +267,9 @@ vec3_t colour(ray_t const* ray, int call_depth) {
       break;
     case MatMetal:
       ret = metal_scatter(mat_metal + hit.midx, ray, &hit, &atten, &scattered);
+      break;
+    case MatDielectric:
+      ret = dielectric_scatter_v2(mat_dielectric+hit.midx, ray, &hit, &atten, &scattered);
       break;
     }
 		
