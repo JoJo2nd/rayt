@@ -59,36 +59,84 @@ typedef struct camera_t {
   vec3_t horizontal;
   vec3_t vertical;
   vec3_t origin;
+  vec3_t u, v, w;
+  float lens_radius;
 } camera_t;
 
-void cam_default(camera_t* cam, vec3_t const* pos, vec3_t const* lookat, vec3_t const* vup, float vfov, float aspect) {
-	float theta = ToRAD(vfov);
+vec3_t rand_vec3() {
+  vec3_t p;
+  do {
+    p = vmathV3Sub_V(vmathV3MakeFromElems_V(2.f*frand48(), 2.f*frand48(), 2.f*frand48()), vmathV3MakeFromScalar_V(1));
+  } while (vmathV3Dot(&p, &p) >= 1.f);
+  return p;
+}
+
+vec3_t vec_reflect(vec3_t const* v, vec3_t const* n) {
+  vec3_t r = vmathV3ScalarMul_V(*n, 2.f*vmathV3Dot(v, n));
+  return vmathV3Sub_V(*v, r);
+}
+
+float vec_refract(vec3_t const* v, vec3_t const* n, float idx_refraction, vec3_t* r) {
+  vec3_t nv = vmathV3Normalize_V(*v);
+  vec3_t nn = vmathV3Normalize_V(*n);
+  float dt = vmathV3Dot(&nv, &nn);
+  float discriminant = 1.f - idx_refraction * idx_refraction*(1 - dt * dt);
+  if (discriminant > 0.f) {
+    vec3_t v1, v2;
+    vmathV3ScalarMul(&v1, &nv, idx_refraction);
+    float v2f = idx_refraction * dt + sqrtf(discriminant);
+    vmathV3ScalarMul(&v2, &nn, v2f);
+    vmathV3Sub(r, &v1, &v2);
+  }
+  return discriminant;
+}
+
+float V3Dist(vec3_t const* a, vec3_t const* b) {
+  float dx = b->x - a->x;
+  float dy = b->y - a->y;
+  float dz = b->z - a->z;
+  return sqrtf(dx*dx + dy*dy + dz*dz);
+}
+
+void cam_default(camera_t* cam, vec3_t const* pos, vec3_t const* lookat, vec3_t const* vup, float vfov, float aspect,
+                 float aperture, float focus_dist) {
+  cam->lens_radius = aperture / 2.f;
+  float theta = ToRAD(vfov);
 	float half_height = tan(theta / 2.f);
 	float half_width = half_height * aspect;
 	cam->origin = *pos;
 	// define our axis
 	vec3_t u, v, w;
-	vmathV3Sub(&w, lookat, pos);
+	vmathV3Sub(&w, pos, lookat);
 	vmathV3Normalize(&w, &w);
 	vmathV3Cross(&u, vup, &w);
 	vmathV3Normalize(&u, &u);
 	vmathV3Cross(&v, &w, &u);
   
 	vmathV3MakeFromElems(&cam->lower_left_corner, 
-		pos->x - half_width * u.x - half_height * v.x - w.x, 
-		pos->y - half_width * u.y - half_height * v.y - w.y,
-		pos->z - half_width * u.z - half_height * v.z - w.z);
-  vmathV3MakeFromElems(&cam->horizontal, 2*half_width*u.x, 2*half_width*u.y, 2*half_width*u.z);
-  vmathV3MakeFromElems(&cam->vertical, 2*half_height*v.x, 2*half_height*v.y, 2*half_height*v.z);
+		pos->x - half_width * focus_dist * u.x - half_height * focus_dist * v.x - focus_dist*w.x, 
+		pos->y - half_width * focus_dist * u.y - half_height * focus_dist * v.y - focus_dist*w.y,
+		pos->z - half_width * focus_dist * u.z - half_height * focus_dist * v.z - focus_dist*w.z);
+  vmathV3MakeFromElems(&cam->horizontal, 2*half_width*focus_dist*u.x, 2*half_width*focus_dist*u.y, 2*half_width*focus_dist*u.z);
+  vmathV3MakeFromElems(&cam->vertical, 2*half_height*focus_dist*v.x, 2*half_height*focus_dist*v.y, 2*half_height*focus_dist*v.z);
+  cam->u = u;
+  cam->v = v;
+  cam->w = w;
 }
 
 void cam_ray(ray_t* screen_ray, camera_t const* cam, float u, float v) {
+  vec3_t rd = vmathV3ScalarMul_V(rand_vec3(), cam->lens_radius);
+  vec3_t offset = {.x=cam->u.x*rd.x + cam->v.x*rd.y, .y=cam->u.y*rd.x + cam->v.y*rd.y, .z=cam->u.z*rd.x + cam->v.z*rd.y };
+
   vec3_t vv;
   vmathV3ScalarMul(&screen_ray->dir, &cam->horizontal, u);
   vmathV3ScalarMul(&vv, &cam->vertical, v);
   vmathV3Add(&screen_ray->dir, &screen_ray->dir, &vv);
   vmathV3Add(&screen_ray->dir, &screen_ray->dir, &cam->lower_left_corner);
-  screen_ray->pt = cam->origin;
+  vmathV3Sub(&screen_ray->dir, &screen_ray->dir, &cam->origin);
+  vmathV3Sub(&screen_ray->dir, &screen_ray->dir, &offset);
+
+  vmathV3Add(&screen_ray->pt, &cam->origin, &offset);
 }
 
 float schlick(float cosine, float ref_idx) {
@@ -102,34 +150,6 @@ vec3_t ray_point_at(ray_t const* ray, float t) {
   vmathV3ScalarMul(&vt, &ray->dir, t);
   vmathV3Add(&r, &ray->pt, &vt);
   return r;
-}
-
-vec3_t rand_vec3() {
-	vec3_t p;
-	do {
-		p = vmathV3Sub_V( vmathV3MakeFromElems_V(2.f*frand48(), 2.f*frand48(), 2.f*frand48()), vmathV3MakeFromScalar_V(1));
-	} while (vmathV3Dot(&p, &p) >= 1.f);
-	return p;
-}
-
-vec3_t vec_reflect(vec3_t const* v, vec3_t const* n) {
-  vec3_t r = vmathV3ScalarMul_V(*n, 2.f*vmathV3Dot(v, n));
-  return vmathV3Sub_V(*v, r);
-}
-
-float vec_refract(vec3_t const* v, vec3_t const* n, float idx_refraction, vec3_t* r) {
-	vec3_t nv = vmathV3Normalize_V(*v);
-  vec3_t nn = vmathV3Normalize_V(*n);
-	float dt = vmathV3Dot(&nv, &nn);
-	float discriminant = 1.f - idx_refraction*idx_refraction*(1-dt*dt);
-	if (discriminant > 0.f) {
-		vec3_t v1, v2;
-    vmathV3ScalarMul(&v1, &nv, idx_refraction);
-    float v2f = idx_refraction * dt + sqrtf(discriminant);
-    vmathV3ScalarMul(&v2, &nn, v2f);
-    vmathV3Sub(r, &v1, &v2);
-	}
-	return discriminant;
 }
 
 int lambertian_scatter(matlambertian_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
@@ -225,7 +245,7 @@ static sphere_t sphere[sphere_count] = {
 	{.centre = { 0.f, -100.5f, -1.f },.radius = 100.f, .mat=MatLambertian,.matidx = 1},
   {.centre = { 1.f, 0.f, -1.f },.radius = .5f, .mat=MatMetal, .matidx=0},
   {.centre = { -1.f, 0.f, -1.f },.radius = .5f, .mat=MatDielectric, .matidx=0},
-{ .centre = { -1.f, 0.f, -1.f },.radius = -.45f,.mat = MatDielectric,.matidx = 0 },
+  {.centre = { -1.f, 0.f, -1.f },.radius = -.45f,.mat = MatDielectric,.matidx = 0},
 };
 matlambertian_t mat_lamb[lambertian_count] = {
   {.albedo={.8f, .3f, .3f}},
@@ -309,10 +329,12 @@ int main(int argc, char** argv) {
 		void* dest_main_buffer = malloc(SCRN_WIDTH*SCRN_HEIGHT*4);
 		int dest_main_bfr_pitch = SCRN_WIDTH*4;
 #endif
-    uint32_t samples = 4;
+    uint32_t samples = 100;
     camera_t cam;
-		vec3_t cam_pos = { -2, 2, 1 }, cam_at = { 0, 0, -1 }, cam_up = { 0, 1, 0 };
-    cam_default(&cam, &cam_pos, &cam_at, &cam_up, 90, SCRN_WIDTH/SCRN_HEIGHT);
+		vec3_t cam_pos = { 3, 3, 2 }, cam_at = { 0, 0, -1 }, cam_up = { 0, 1, 0 };
+    float aperture = 2.f;
+    float dist_to_focus = V3Dist(&cam_pos, &cam_at);
+    cam_default(&cam, &cam_pos, &cam_at, &cam_up, 20, SCRN_WIDTH/SCRN_HEIGHT, aperture, dist_to_focus);
     for (int32_t j=0; j < SCRN_HEIGHT; ++j) {
       for (int32_t i=0; i < SCRN_WIDTH; ++i) {
         vec3_t col = {0.f, 0.f, 0.f};
