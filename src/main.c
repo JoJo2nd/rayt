@@ -9,6 +9,8 @@
 
 #define SCRN_HEIGHT (720)
 #define SCRN_WIDTH (SCRN_HEIGHT*2)
+#define PI (3.14159265359f)
+#define ToRAD(x) (x*(PI/180.f))
 
 #define MAKE_U32_COLOR(r, g, b, a) (uint32_t)(((r&0xFF)  << 0) | ((g&0xFF) << 8) | ((b&0xFF) << 16) | ((a&0xFF) << 24))
 
@@ -59,11 +61,25 @@ typedef struct camera_t {
   vec3_t origin;
 } camera_t;
 
-void cam_default(camera_t* cam) {
-  vmathV3MakeFromElems(&cam->lower_left_corner, -2.f, -1.f, -1.f);
-  vmathV3MakeFromElems(&cam->horizontal, 4.f, 0.f, 0.f);
-  vmathV3MakeFromElems(&cam->vertical, 0.f, 2.f, 0.f);
-  vmathV3MakeFromElems(&cam->origin, 0.f, 0.f, 0.f);
+void cam_default(camera_t* cam, vec3_t const* pos, vec3_t const* lookat, vec3_t const* vup, float vfov, float aspect) {
+	float theta = ToRAD(vfov);
+	float half_height = tan(theta / 2.f);
+	float half_width = half_height * aspect;
+	cam->origin = *pos;
+	// define our axis
+	vec3_t u, v, w;
+	vmathV3Sub(&w, lookat, pos);
+	vmathV3Normalize(&w, &w);
+	vmathV3Cross(&u, vup, &w);
+	vmathV3Normalize(&u, &u);
+	vmathV3Cross(&v, &w, &u);
+  
+	vmathV3MakeFromElems(&cam->lower_left_corner, 
+		pos->x - half_width * u.x - half_height * v.x - w.x, 
+		pos->y - half_width * u.y - half_height * v.y - w.y,
+		pos->z - half_width * u.z - half_height * v.z - w.z);
+  vmathV3MakeFromElems(&cam->horizontal, 2*half_width*u.x, 2*half_width*u.y, 2*half_width*u.z);
+  vmathV3MakeFromElems(&cam->vertical, 2*half_height*v.x, 2*half_height*v.y, 2*half_height*v.z);
 }
 
 void cam_ray(ray_t* screen_ray, camera_t const* cam, float u, float v) {
@@ -133,35 +149,7 @@ int metal_scatter(matmetal_t const* params, ray_t const* rin, hit_rec_t const* h
   return vmathV3Dot_V(scatter->dir, hit->normal) > 0.f ? 1 : 0;
 }
 
-int dielectric_scatter_v1(matdielectric_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
-  vec3_t outward_nrm;
-  vec3_t reflected = vec_reflect(&rin->dir, &hit->normal);
-  vec3_t refracted;
-  float ni_over_ni;
-  vmathV3MakeFromScalar(atten, 1.f);
-  //float reflect_prob;
-  //float cosine;
-  if (vmathV3Dot(&rin->dir, &hit->normal) > 0) {
-    vmathV3Neg(&outward_nrm, &hit->normal);
-    ni_over_ni = params->refraction;
-    //cosine = params->refraction * vmathV3Dot(&rin->dir, &hit->normal) / vmathV3Length(&rin->dir);
-  } else {
-    outward_nrm = hit->normal;
-    ni_over_ni = 1.f / params->refraction;
-    //cosine = -vmathV3Dot(&rin->dir, &hit->normal) / vmathV3Length(&rin->dir);
-  }
-  if (vec_refract(&rin->dir, &outward_nrm, ni_over_ni, &refracted) > 0) {
-    scatter->pt = hit->p;
-    scatter->dir = refracted;
-  } else {
-    scatter->pt = hit->p;
-    scatter->dir = reflected;
-  }
-
-  return 1;
-}
-
-int dielectric_scatter_v2(matdielectric_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
+int dielectric_scatter(matdielectric_t const* params, ray_t const* rin, hit_rec_t const* hit, vec3_t* atten, ray_t* scatter) {
 	vec3_t outward_nrm;
   vec3_t reflected = vec_reflect(&rin->dir, &hit->normal);
   vec3_t refracted;
@@ -269,7 +257,7 @@ vec3_t colour(ray_t const* ray, int call_depth) {
       ret = metal_scatter(mat_metal + hit.midx, ray, &hit, &atten, &scattered);
       break;
     case MatDielectric:
-      ret = dielectric_scatter_v2(mat_dielectric+hit.midx, ray, &hit, &atten, &scattered);
+      ret = dielectric_scatter(mat_dielectric+hit.midx, ray, &hit, &atten, &scattered);
       break;
     }
 		
@@ -321,9 +309,10 @@ int main(int argc, char** argv) {
 		void* dest_main_buffer = malloc(SCRN_WIDTH*SCRN_HEIGHT*4);
 		int dest_main_bfr_pitch = SCRN_WIDTH*4;
 #endif
-    uint32_t samples = 100;
+    uint32_t samples = 4;
     camera_t cam;
-    cam_default(&cam);
+		vec3_t cam_pos = { -2, 2, 1 }, cam_at = { 0, 0, -1 }, cam_up = { 0, 1, 0 };
+    cam_default(&cam, &cam_pos, &cam_at, &cam_up, 90, SCRN_WIDTH/SCRN_HEIGHT);
     for (int32_t j=0; j < SCRN_HEIGHT; ++j) {
       for (int32_t i=0; i < SCRN_WIDTH; ++i) {
         vec3_t col = {0.f, 0.f, 0.f};
