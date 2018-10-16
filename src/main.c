@@ -102,7 +102,7 @@ void cam_default(camera_t* cam, vec3_t const* pos, vec3_t const* lookat, vec3_t 
                  float aperture, float focus_dist) {
   cam->lens_radius = aperture / 2.f;
   float theta = ToRAD(vfov);
-	float half_height = tan(theta / 2.f);
+	float half_height = tanf(theta / 2.f);
 	float half_width = half_height * aspect;
 	cam->origin = *pos;
 	// define our axis
@@ -233,11 +233,12 @@ int hit_spheres(hit_rec_t* hit, sphere_t const* s, uint32_t s_count, float t_min
 	return hit->t < t_max;
 }
 
-enum { 
-  sphere_count = 5,
-  lambertian_count = 2,
-  metal_count = 3,
-  dielectric_count = 1,
+enum {
+	sphere_count = 5,
+	random_sphere_count = 500,
+  lambertian_count = 50,
+  metal_count = 30,
+  dielectric_count = 30,
   call_depth_limit = 50,
 };
 static sphere_t sphere[sphere_count] = {
@@ -247,24 +248,25 @@ static sphere_t sphere[sphere_count] = {
   {.centre = { -1.f, 0.f, -1.f },.radius = .5f, .mat=MatDielectric, .matidx=0},
   {.centre = { -1.f, 0.f, -1.f },.radius = -.45f,.mat = MatDielectric,.matidx = 0},
 };
+static sphere_t rand_spheres[random_sphere_count] = { 0 };
 matlambertian_t mat_lamb[lambertian_count] = {
+	{.albedo={.5f, .5f, .5f}},
   {.albedo={.8f, .3f, .3f}},
-  {.albedo={.8f, .8f, .0f}},
 };
 matmetal_t mat_metal[metal_count] = {
   {.albedo={.8f, .6f, .2f}, .roughness=.0f, },
   {.albedo={.8f, .6f, .2f}, .roughness=.4f, },
-  {.albedo={.8f, .8f, .8f},.roughness =1.f },
+  {.albedo={.8f, .8f, .8f}, .roughness =1.f },
 };
 matdielectric_t mat_dielectric[dielectric_count] = {
-  {.refraction=1.6f}
+  {.refraction=1.6f},
 };
 
-vec3_t colour(ray_t const* ray, int call_depth) {
+vec3_t colour(ray_t const* ray, sphere_t const* s, uint32_t s_count, int call_depth) {
   static const vec3_t k1 = {1.f, 1.f, 1.f};
   static const vec3_t k2 = {.5f, .7f, 1.f};
   hit_rec_t hit;
-  if (hit_spheres(&hit, sphere, sphere_count, 0.001f, FLT_MAX, ray)) {
+  if (hit_spheres(&hit, s, s_count, 0.001f, FLT_MAX, ray)) {
     if (call_depth >= call_depth_limit) return vmathV3MakeFromScalar_V(0.f);
     ray_t scattered;
     vec3_t atten;
@@ -282,7 +284,7 @@ vec3_t colour(ray_t const* ray, int call_depth) {
     }
 		
     if (!ret) return vmathV3MakeFromScalar_V(0.f);
-    return vmathV3MulPerElem_V(atten, colour(&scattered, call_depth + 1));
+    return vmathV3MulPerElem_V(atten, colour(&scattered, s, s_count, call_depth + 1));
   }
   
   vec3_t unit_dir, a, b, ret;
@@ -331,10 +333,68 @@ int main(int argc, char** argv) {
 #endif
     uint32_t samples = 100;
     camera_t cam;
-		vec3_t cam_pos = { 3, 3, 2 }, cam_at = { 0, 0, -1 }, cam_up = { 0, 1, 0 };
-    float aperture = 2.f;
+		vec3_t cam_pos = { 7, 5, 14 }, cam_at = { 0, 0, -1 }, cam_up = { 0, 1, 0 };
+    float aperture = .1f;
     float dist_to_focus = V3Dist(&cam_pos, &cam_at);
     cam_default(&cam, &cam_pos, &cam_at, &cam_up, 20, SCRN_WIDTH/SCRN_HEIGHT, aperture, dist_to_focus);
+
+		for (uint32_t i = 2; i < lambertian_count; ++i) {
+			vmathV3MakeFromElems(&mat_lamb[i].albedo, frand48(), frand48(), frand48());
+		}
+
+		for (uint32_t i = 3; i < metal_count; ++i) {
+			vmathV3MakeFromElems(&mat_metal[i].albedo, frand48(), frand48(), frand48());
+			mat_metal[i].roughness = frand48();
+		}
+
+		for (uint32_t i = 1; i < dielectric_count; ++i) {
+			mat_dielectric[i].refraction = frand48() * 1.25f + 1.f;
+		}
+
+		int new_sphere_count = 0;
+		vmathV3MakeFromElems(&rand_spheres[new_sphere_count].centre, 0, -1000, 0);
+		rand_spheres[new_sphere_count].radius = 1000;
+		rand_spheres[new_sphere_count].mat = MatLambertian;
+		rand_spheres[new_sphere_count].matidx = 0;
+		new_sphere_count++;
+
+		vmathV3MakeFromElems(&rand_spheres[new_sphere_count].centre, 0, 1, 0);
+		rand_spheres[new_sphere_count].radius = 1.f;
+		rand_spheres[new_sphere_count].mat = MatDielectric;
+		rand_spheres[new_sphere_count].matidx = 0;
+		vmathV3MakeFromElems(&rand_spheres[new_sphere_count+1].centre, -4, 1, 0);
+		rand_spheres[new_sphere_count+1].radius = 1.f;
+		rand_spheres[new_sphere_count+1].mat = MatLambertian;
+		rand_spheres[new_sphere_count+1].matidx = 1;
+		vmathV3MakeFromElems(&rand_spheres[new_sphere_count+2].centre, 4, 1, 0);
+		rand_spheres[new_sphere_count+2].radius = 1.f;
+		rand_spheres[new_sphere_count+2].mat = MatMetal;
+		rand_spheres[new_sphere_count+2].matidx = 0;
+		new_sphere_count+=3;
+
+		vec3_t vmarker = { 4.f, .2f, .0f };
+		for (int a = -11; a < 11; ++a) {
+			for (int b = -11; b < 11; ++b) {
+				float choose_mat = frand48();
+				vec3_t centre = { a+.9f*frand48(), 0.2f, b+.9f*frand48() };
+				if (V3Dist(&centre, &vmarker) > .9f) {
+					rand_spheres[new_sphere_count].centre = centre;
+					rand_spheres[new_sphere_count].radius = 0.2f;
+					if (choose_mat < .8f) {
+						rand_spheres[new_sphere_count].mat = MatLambertian;
+						rand_spheres[new_sphere_count].matidx = rand() % lambertian_count;
+					} else if (choose_mat < .95f) {
+						rand_spheres[new_sphere_count].mat = MatMetal;
+						rand_spheres[new_sphere_count].matidx = rand() % metal_count;
+					} else {
+						rand_spheres[new_sphere_count].mat = MatDielectric;
+						rand_spheres[new_sphere_count].matidx = rand() % dielectric_count;
+					}
+					++new_sphere_count;
+				}
+			}
+		}
+
     for (int32_t j=0; j < SCRN_HEIGHT; ++j) {
       for (int32_t i=0; i < SCRN_WIDTH; ++i) {
         vec3_t col = {0.f, 0.f, 0.f};
@@ -343,7 +403,7 @@ int main(int argc, char** argv) {
           float u = ((float)i + (float)drand48()) / (float)SCRN_WIDTH;
           float v = ((float)j + (float)drand48()) / (float)SCRN_HEIGHT;
           cam_ray(&screen_ray, &cam, u, v);
-          col = vmathV3Add_V(col, colour(&screen_ray, 0));
+          col = vmathV3Add_V(col, colour(&screen_ray, rand_spheres, new_sphere_count, 0));
 
         }
         col = vmathV3ScalarDiv_V(col, (float)samples);
@@ -357,6 +417,9 @@ int main(int argc, char** argv) {
 
 				*(uint32_t*)(((uint8_t*)dest_main_buffer) + (dest_main_bfr_pitch * (SCRN_HEIGHT-(j+1))) + (i * 4)) = MAKE_U32_COLOR(ir, ig, ib, 255);
       }
+#if !USE_SDL
+			stbi_write_png("rayt.png", SCRN_WIDTH, SCRN_HEIGHT, 4, dest_main_buffer, dest_main_bfr_pitch);
+#endif
     }
 #if USE_SDL
     SDL_UnlockTexture(main_surface);
@@ -364,7 +427,7 @@ int main(int argc, char** argv) {
     SDL_RenderCopy(renderer, main_surface, NULL, NULL);
     SDL_RenderPresent(renderer);
 #else
-		stbi_write_png("rayt.png", SCRN_WIDTH, SCRN_HEIGHT, 4, dest_main_buffer, dest_main_bfr_pitch);
+		//stbi_write_png("rayt.png", SCRN_WIDTH, SCRN_HEIGHT, 4, dest_main_buffer, dest_main_bfr_pitch);
 		free(dest_main_buffer);
 #endif
   }
